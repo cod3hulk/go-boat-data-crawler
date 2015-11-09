@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -70,7 +71,9 @@ func (c Boot24Crawler) Values() url.Values {
 
 func (c Boot24Crawler) Crawl() []Entry {
 	// query page
-	res, err := http.PostForm("http://www.boot24.com/suchergebnis/segelboot.php?pagesize=3", c.Values())
+	page := 1
+	url := fmt.Sprintf("http://www.boot24.com/suchergebnis/segelboot.php?page=%d&pagesize=3", page)
+	res, err := http.PostForm(url, c.Values())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -80,6 +83,18 @@ func (c Boot24Crawler) Crawl() []Entry {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// get max page number
+	pageNumbers := []int{}
+	doc.Find(".main-content-norm .sitenumber a.seite").Each(func(i int, s *goquery.Selection) {
+		pageNumber, err := strconv.Atoi(s.Text())
+		if err != nil {
+			log.Fatal(err)
+		}
+		pageNumbers = append(pageNumbers, pageNumber)
+	})
+	maxPageNumber := pageNumbers[len(pageNumbers)-1]
+	fmt.Println(maxPageNumber)
 
 	// process entries
 	entries := []Entry{}
