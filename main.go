@@ -45,6 +45,18 @@ func (c Boot24Crawler) Create(s *goquery.Selection) Entry {
 	}
 }
 
+func (c Boot24Crawler) GetLastPage(doc *goquery.Document) int {
+	pageNumbers := []int{}
+	doc.Find(".main-content-norm .sitenumber a.seite").Each(func(i int, s *goquery.Selection) {
+		pageNumber, err := strconv.Atoi(s.Text())
+		if err != nil {
+			log.Fatal(err)
+		}
+		pageNumbers = append(pageNumbers, pageNumber)
+	})
+	return pageNumbers[len(pageNumbers)-1]
+}
+
 func (c Boot24Crawler) Values() url.Values {
 	v := url.Values{}
 	v.Add("typ", "t6")
@@ -69,34 +81,24 @@ func (c Boot24Crawler) Values() url.Values {
 	return v
 }
 
-func (c Boot24Crawler) Crawl() []Entry {
-	// query page
-	page := 1
+func (c Boot24Crawler) QueryPage(page int) *http.Response {
 	url := fmt.Sprintf("http://www.boot24.com/suchergebnis/segelboot.php?page=%d&pagesize=3", page)
 	res, err := http.PostForm(url, c.Values())
 	if err != nil {
 		log.Fatal(err)
 	}
+	return res
+}
 
-	// parse page
+func (c Boot24Crawler) ParsePage(res *http.Response) *goquery.Document {
 	doc, err := goquery.NewDocumentFromResponse(res)
 	if err != nil {
 		log.Fatal(err)
 	}
+	return doc
+}
 
-	// get max page number
-	pageNumbers := []int{}
-	doc.Find(".main-content-norm .sitenumber a.seite").Each(func(i int, s *goquery.Selection) {
-		pageNumber, err := strconv.Atoi(s.Text())
-		if err != nil {
-			log.Fatal(err)
-		}
-		pageNumbers = append(pageNumbers, pageNumber)
-	})
-	maxPageNumber := pageNumbers[len(pageNumbers)-1]
-	fmt.Println(maxPageNumber)
-
-	// process entries
+func (c Boot24Crawler) ProcessDoc(doc *goquery.Document) []Entry {
 	entries := []Entry{}
 	doc.Find("#res").Each(func(i int, s *goquery.Selection) {
 		s.Find(".sr-objektbox-in").Each(func(i int, s *goquery.Selection) {
@@ -104,8 +106,33 @@ func (c Boot24Crawler) Crawl() []Entry {
 			entries = append(entries, entry)
 		})
 	})
-
 	return entries
+}
+
+func (c Boot24Crawler) Crawl() []Entry {
+	result := []Entry{}
+
+	// crawl first page
+	currentPage := 1
+	res := c.QueryPage(currentPage)
+	doc := c.ParsePage(res)
+	tmp := c.ProcessDoc(doc)
+	result = append(result, tmp...)
+
+	// crawl remaining pages
+	currentPage += 1
+	lastPage := c.GetLastPage(doc) - 1
+	for currentPage < lastPage {
+		log.Printf("Processing page %d of %d", currentPage, lastPage)
+		res := c.QueryPage(currentPage)
+		doc := c.ParsePage(res)
+		tmp := c.ProcessDoc(doc)
+		result = append(result, tmp...)
+		currentPage += 1
+		log.Println("Finished.")
+	}
+
+	return result
 }
 
 func main() {
